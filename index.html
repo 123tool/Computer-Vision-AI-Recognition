@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>123Vision | Cyber Hand Tracker SPY-E</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1 class="neon-text">123VISION <span class="version">v2.0</span></h1>
+            <p class="subtitle">AI Hand Tracking & Voice Command System by SPY-E</p>
+        </header>
+
+        <div class="main-layout">
+            <div class="glass-panel camera-panel">
+                <div class="panel-header">
+                    <span class="status-dot" id="camStatusDot"></span>
+                    <span id="cameraStatusText">SYSTEM STANDBY</span>
+                </div>
+                
+                <div class="video-container">
+                    <video id="video" autoplay playsinline></video>
+                    <canvas id="canvas"></canvas>
+                </div>
+
+                <div class="live-dashboard">
+                    <div class="stat-group">
+                        <span class="label">DETECTED FINGERS</span>
+                        <div id="fingerCount" class="counter">0</div>
+                    </div>
+                    
+                    <div class="pill-container" id="fingerPills">
+                        <div class="pill" id="pill-0">THUMB</div>
+                        <div class="pill" id="pill-1">INDEX</div>
+                        <div class="pill" id="pill-2">MIDDLE</div>
+                        <div class="pill" id="pill-3">RING</div>
+                        <div class="pill" id="pill-4">PINKY</div>
+                    </div>
+                </div>
+
+                <div class="action-btns">
+                    <button id="startBtn" class="btn-primary">INITIALIZE AI</button>
+                    <button id="stopBtn" class="btn-danger">TERMINATE</button>
+                </div>
+            </div>
+
+            <div class="glass-panel voice-panel">
+                <h3>VOICE COMMAND</h3>
+                <div class="voice-visualizer" id="voiceBtn">
+                    <div class="mic-circle">🎤</div>
+                </div>
+                <p id="voiceStatus">Mic: Off</p>
+                
+                <div class="transcript-box" id="transcript">
+                    <p class="placeholder">Command history will appear here...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const fingerCount = document.getElementById('fingerCount');
+        const transcript = document.getElementById('transcript');
+        
+        let hands, camera, recognition, isListening = false;
+
+        // Inisialisasi AI Hands
+        function initAI() {
+            hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.7
+            });
+
+            hands.onResults(onResults);
+        }
+
+        function onResults(results) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#00f2ff', lineWidth: 4});
+                    drawLandmarks(ctx, landmarks, {color: '#ff0055', lineWidth: 1, radius: 3});
+                    
+                    const count = calculateFingers(landmarks, results.multiHandedness[0].label);
+                    fingerCount.textContent = count;
+                    updatePills(landmarks, results.multiHandedness[0].label);
+                }
+            } else {
+                fingerCount.textContent = "0";
+                resetPills();
+            }
+            ctx.restore();
+        }
+
+        function calculateFingers(lm, handedness) {
+            let count = 0;
+            const tips = [4, 8, 12, 16, 20];
+            const pips = [2, 5, 9, 13, 17];
+            const isRight = handedness === 'Right';
+
+            for (let i = 0; i < 5; i++) {
+                let up = false;
+                if (i === 0) up = isRight ? lm[4].x < lm[2].x : lm[4].x > lm[2].x;
+                else up = lm[tips[i]].y < lm[pips[i]].y;
+                if (up) count++;
+            }
+            return count;
+        }
+
+        function updatePills(lm, handedness) {
+            const tips = [4, 8, 12, 16, 20];
+            const pips = [2, 5, 9, 13, 17];
+            const isRight = handedness === 'Right';
+
+            for (let i = 0; i < 5; i++) {
+                let up = (i === 0) ? (isRight ? lm[4].x < lm[2].x : lm[4].x > lm[2].x) : (lm[tips[i]].y < lm[pips[i]].y);
+                const el = document.getElementById(`pill-${i}`);
+                if (up) el.classList.add('active'); else el.classList.remove('active');
+            }
+        }
+
+        function resetPills() {
+            for (let i = 0; i < 5; i++) document.getElementById(`pill-${i}`).classList.remove('active');
+        }
+
+        // Logic Kamera
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            if (!hands) initAI();
+            const stream = await navigator.mediaDevices.getUserMedia({video: true});
+            video.srcObject = stream;
+            camera = new Camera(video, {onFrame: async () => await hands.send({image: video}), width: 640, height: 480});
+            camera.start();
+            document.getElementById('camStatusDot').style.backgroundColor = '#00f2ff';
+            document.getElementById('cameraStatusText').textContent = 'AI ACTIVE';
+        });
+
+        // Voice Command (Bahasa Indonesia)
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.lang = 'id-ID';
+            
+            recognition.onresult = (event) => {
+                const cmd = event.results[event.results.length - 1][0].transcript.toLowerCase();
+                const p = document.createElement('p');
+                p.innerHTML = `> ${cmd}`;
+                transcript.prepend(p);
+                
+                if (cmd.includes('mulai')) document.getElementById('startBtn').click();
+                if (cmd.includes('berhenti')) location.reload();
+            };
+        }
+
+        document.getElementById('voiceBtn').addEventListener('click', () => {
+            if (!isListening) { recognition.start(); isListening = true; document.getElementById('voiceStatus').textContent = "Mic: On"; }
+            else { recognition.stop(); isListening = false; document.getElementById('voiceStatus').textContent = "Mic: Off"; }
+        });
+    </script>
+</body>
+</html>
