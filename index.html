@@ -24,7 +24,7 @@
             <div class="glass-panel camera-panel">
                 <div class="panel-header">
                     <span class="status-dot" id="camStatusDot"></span>
-                    <span id="cameraStatusText">SYSTEM STANDBY</span>
+                    <span id="cameraStatusText" style="font-size: 12px; font-weight: bold; color: #94a3b8;">SYSTEM STANDBY</span>
                 </div>
                 
                 <div class="video-container">
@@ -58,7 +58,7 @@
                 <div class="voice-visualizer" id="voiceBtn">
                     <div class="mic-circle">🎤</div>
                 </div>
-                <p id="voiceStatus">Mic: Off</p>
+                <p id="voiceStatus" style="text-align: center; color: #94a3b8; font-size: 12px;">Mic: Off</p>
                 
                 <div class="transcript-box" id="transcript">
                     <p class="placeholder">Command history will appear here...</p>
@@ -76,7 +76,6 @@
         
         let hands, camera, recognition, isListening = false;
 
-        // Inisialisasi AI Hands
         function initAI() {
             hands = new Hands({
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -146,18 +145,22 @@
             for (let i = 0; i < 5; i++) document.getElementById(`pill-${i}`).classList.remove('active');
         }
 
-        // Logic Kamera
         document.getElementById('startBtn').addEventListener('click', async () => {
             if (!hands) initAI();
-            const stream = await navigator.mediaDevices.getUserMedia({video: true});
-            video.srcObject = stream;
-            camera = new Camera(video, {onFrame: async () => await hands.send({image: video}), width: 640, height: 480});
-            camera.start();
-            document.getElementById('camStatusDot').style.backgroundColor = '#00f2ff';
-            document.getElementById('cameraStatusText').textContent = 'AI ACTIVE';
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({video: true});
+                video.srcObject = stream;
+                camera = new Camera(video, {onFrame: async () => await hands.send({image: video}), width: 640, height: 480});
+                camera.start();
+                document.getElementById('camStatusDot').style.backgroundColor = '#00f2ff';
+                document.getElementById('cameraStatusText').textContent = 'AI ACTIVE';
+            } catch (err) {
+                alert("Kamera diblokir atau tidak ditemukan!");
+            }
         });
 
-        // Voice Command (Bahasa Indonesia)
+        document.getElementById('stopBtn').addEventListener('click', () => { location.reload(); });
+
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = true;
@@ -166,17 +169,26 @@
             recognition.onresult = (event) => {
                 const cmd = event.results[event.results.length - 1][0].transcript.toLowerCase();
                 const p = document.createElement('p');
-                p.innerHTML = `> ${cmd}`;
+                p.innerHTML = `<span style="color: #00f2ff;">></span> ${cmd}`;
                 transcript.prepend(p);
                 
                 if (cmd.includes('mulai')) document.getElementById('startBtn').click();
-                if (cmd.includes('berhenti')) location.reload();
+                if (cmd.includes('berhenti') || cmd.includes('stop')) location.reload();
             };
         }
 
         document.getElementById('voiceBtn').addEventListener('click', () => {
-            if (!isListening) { recognition.start(); isListening = true; document.getElementById('voiceStatus').textContent = "Mic: On"; }
-            else { recognition.stop(); isListening = false; document.getElementById('voiceStatus').textContent = "Mic: Off"; }
+            if (!isListening) { 
+                recognition.start(); 
+                isListening = true; 
+                document.getElementById('voiceStatus').textContent = "Mic: On (Listening...)";
+                document.getElementById('voiceBtn').style.boxShadow = "0 0 20px #00f2ff";
+            } else { 
+                recognition.stop(); 
+                isListening = false; 
+                document.getElementById('voiceStatus').textContent = "Mic: Off";
+                document.getElementById('voiceBtn').style.boxShadow = "none";
+            }
         });
     </script>
 </body>
